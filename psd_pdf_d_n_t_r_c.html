@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PSD → PDF Dönüştürücü | İstemci Taraflı & Hızlı</title>
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        slate: {
+                            850: '#151e32',
+                            900: '#0f172a',
+                            950: '#090d16',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Kütüphaneler (CDN) -->
+    <!-- ag-psd: PSD Okuma ve Yazma -->
+    <script src="https://cdn.jsdelivr.net/npm/ag-psd@16.0.0/dist/bundle.js"></script>
+    <!-- jsPDF: PDF Oluşturma -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- JSZip: Ayrı PDF'leri ZIP olarak paketleme -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- SortableJS: Sürükle-Bırak Sıralama -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Özel Kaydırma Çubuğu */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        /* Şeffaf Arka Plan Damalı Desen (PSD Önizlemeleri için) */
+        .checkerboard {
+            background-color: #1e293b;
+            background-image: 
+                linear-gradient(45deg, #0f172a 25%, transparent 25%), 
+                linear-gradient(-45deg, #0f172a 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #0f172a 75%), 
+                linear-gradient(-45deg, transparent 75%, #0f172a 75%);
+            background-size: 16px 16px;
+            background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+        }
+
+        /* SortableJS Sürükleme Efektleri */
+        .sortable-ghost {
+            opacity: 0.4;
+            background-color: rgba(99, 102, 241, 0.15) !important;
+            border-color: #6366f1 !important;
+        }
+        .sortable-drag {
+            cursor: grabbing !important;
+            transform: scale(1.02);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Animasyonlar */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.25s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white">
+
+    <!-- Bildirim (Toast) Alanı -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+    <!-- Üst Başlık (Header) -->
+    <header class="border-b border-slate-800/80 bg-slate-900/70 backdrop-blur-md sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                    <i data-lucide="layers" class="w-5 h-5 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                        PSD <span class="text-indigo-400">→</span> PDF Dönüştürücü
+                    </h1>
+                    <p class="text-xs text-slate-400 hidden sm:block">Tamamen tarayıcı tabanlı, güvenli ve hızlı dönüştürme</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <div class="hidden md:flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-full">
+                    <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+                    <span>Dosyalarınız Sunucuya Yüklenmez</span>
+                </div>
+                <button id="btn-generate-demo" type="button" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 hover:border-indigo-500/50 transition-all cursor-pointer shadow-sm active:scale-95">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-indigo-400"></i>
+                    <span>Demo PSD Oluştur ve Ekle</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Ana İçerik -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            <!-- Sol Kolon: Dosya Yükleme ve Sıralanabilir Liste (8 Birim) -->
+            <div class="lg:col-span-8 flex flex-col gap-6">
+                
+                <!-- Sürükle & Bırak Yükleme Alanı -->
+                <div id="drop-zone" class="group relative border-2 border-dashed border-slate-700 hover:border-indigo-500 bg-slate-900/50 hover:bg-slate-900/90 rounded-2xl p-8 sm:p-10 text-center transition-all duration-200 cursor-pointer">
+                    <input type="file" id="file-input" accept=".psd" multiple class="hidden">
+                    
+                    <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-800 group-hover:bg-indigo-500/10 border border-slate-700 group-hover:border-indigo-500/40 flex items-center justify-center transition-colors">
+                        <i data-lucide="file-up" class="w-8 h-8 text-slate-400 group-hover:text-indigo-400 transition-colors"></i>
+                    </div>
+                    
+                    <h2 class="text-base sm:text-lg font-semibold text-white mb-1">
+                        PSD dosyalarınızı buraya sürükleyip bırakın
+                    </h2>
+                    <p class="text-sm text-slate-400 mb-5 max-w-md mx-auto">
+                        Veya bilgisayarınızdan birden fazla <span class="text-slate-300 font-medium">.psd</span> dosyası seçmek için tıklayın.
+                    </p>
+                    
+                    <div class="flex flex-wrap items-center justify-center gap-3">
+                        <span class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 group-hover:bg-indigo-500 text-white text-sm font-medium shadow-lg shadow-indigo-600/20 transition-all">
+                            <i data-lucide="folder-open" class="w-4 h-4"></i>
+                            Dosya Seç
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Yüklenen Dosyalar Başlık ve Araç Çubuğu -->
+                <div id="list-header" class="hidden flex-wrap items-center justify-between gap-4 bg-slate-900/80 border border-slate-800 px-5 py-3.5 rounded-2xl">
+                    <div class="flex items-center gap-3">
+                        <span class="flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-400 text-xs font-bold" id="file-count-badge">0</span>
+                        <div>
+                            <h3 class="text-sm font-semibold text-white">Yüklenen PSD Dosyaları</h3>
+                            <p class="text-xs text-slate-400">PDF sayfa sırasını değiştirmek için kartları sürükleyin</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <button id="btn-sort-name" type="button" title="İsme Göre Sırala (A-Z)" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors cursor-pointer">
+                            <i data-lucide="arrow-down-a-z" class="w-3.5 h-3.5"></i>
+                            <span class="hidden sm:inline">A-Z Sırala</span>
+                        </button>
+                        <button id="btn-clear-all" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors cursor-pointer">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            <span>Tümünü Temizle</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- PSD Dosya Listesi (SortableJS Konteyneri) -->
+                <div id="psd-list" class="flex flex-col gap-3"></div>
+
+                <!-- Boş Durum Bilgilendirmesi -->
+                <div id="empty-state" class="bg-slate-900/30 border border-slate-800/60 rounded-2xl p-8 text-center">
+                    <p class="text-sm text-slate-400">
+                        Henüz bir PSD dosyası eklenmedi. Yukarıdaki alandan dosya yükleyebilir veya sağ üstteki 
+                        <button type="button" onclick="document.getElementById('btn-generate-demo').click()" class="text-indigo-400 hover:text-indigo-300 underline font-medium cursor-pointer">Demo PSD Oluştur</button> 
+                        butonunu kullanarak hemen test edebilirsiniz.
+                    </p>
+                </div>
+
+            </div>
+
+            <!-- Sağ Kolon: PDF Dönüştürme Ayarları ve İşlem Paneli (4 Birim) -->
+            <div class="lg:col-span-4 sticky top-24 flex flex-col gap-6">
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                    <div class="flex items-center gap-2.5 pb-4 mb-5 border-b border-slate-800">
+                        <i data-lucide="sliders-horizontal" class="w-5 h-5 text-indigo-400"></i>
+                        <h2 class="text-base font-semibold text-white">PDF Dönüştürme Ayarları</h2>
+                    </div>
+
+                    <form id="settings-form" class="flex flex-col gap-5">
+                        <!-- Çıktı Modu -->
+                        <div>
+                            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Çıktı Modu</label>
+                            <div class="grid grid-cols-1 gap-2.5">
+                                <label class="relative flex items-start gap-3 p-3.5 rounded-xl border border-slate-700/80 bg-slate-850/60 cursor-pointer hover:border-indigo-500/50 transition-all has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-500/10">
+                                    <input type="radio" name="outputMode" value="merge" checked class="mt-0.5 text-indigo-600 focus:ring-indigo-500 bg-slate-800 border-slate-600">
+                                    <div class="flex-1">
+                                        <span class="block text-sm font-medium text-white">Tek PDF Olarak Birleştir</span>
+                                        <span class="block text-xs text-slate-400 mt-0.5">Tüm PSD'ler sıralı olarak tek PDF belgesinde birleşir.</span>
+                                    </div>
+                                </label>
+
+                                <label class="relative flex items-start gap-3 p-3.5 rounded-xl border border-slate-700/80 bg-slate-850/60 cursor-pointer hover:border-indigo-500/50 transition-all has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-500/10">
+                                    <input type="radio" name="outputMode" value="separate" class="mt-0.5 text-indigo-600 focus:ring-indigo-500 bg-slate-800 border-slate-600">
+                                    <div class="flex-1">
+                                        <span class="block text-sm font-medium text-white">Her Dosyayı Ayrı PDF Yap</span>
+                                        <span class="block text-xs text-slate-400 mt-0.5">Her PSD ayrı PDF olur ve tek bir ZIP arşivi olarak iner.</span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Sayfa Boyutu -->
+                        <div>
+                            <label for="page-size" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Sayfa Boyutu</label>
+                            <div class="relative">
+                                <select id="page-size" class="w-full appearance-none bg-slate-850 border border-slate-700 hover:border-slate-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl px-4 py-2.5 text-sm text-white outline-none transition-colors">
+                                    <option value="original" selected>Orijinal PSD Boyutu (Önerilen - Kayıpsız Ölçek)</option>
+                                    <option value="a4">A4 (Dikey / Yatay Otomatik)</option>
+                                    <option value="letter">Letter (Dikey / Yatay Otomatik)</option>
+                                </select>
+                                <i data-lucide="chevron-down" class="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                            </div>
+                        </div>
+
+                        <!-- Görüntü Kalitesi / Sıkıştırma -->
+                        <div>
+                            <label for="image-quality" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Görüntü Kalitesi / Sıkıştırma</label>
+                            <div class="relative">
+                                <select id="image-quality" class="w-full appearance-none bg-slate-850 border border-slate-700 hover:border-slate-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl px-4 py-2.5 text-sm text-white outline-none transition-colors">
+                                    <option value="png">%100 (Orijinal / Kayıpsız PNG)</option>
+                                    <option value="jpeg-85" selected>%85 (Yüksek Kalite - JPEG)</option>
+                                    <option value="jpeg-50">%50 (Dengeli - Netliği Koruyan)</option>
+                                    <option value="jpeg-25">%25 (Maksimum Sıkıştırma - Keskin)</option>
+                                </select>
+                                <i data-lucide="chevron-down" class="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                            </div>
+                            <!-- Dinamik Kalite ve Boyut Tasarrufu Bilgisi -->
+                            <div id="quality-info-box" class="mt-2.5 p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/90 flex items-start gap-2 text-[11px] text-slate-400 leading-relaxed">
+                                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-indigo-400 shrink-0 mt-0.5"></i>
+                                <span id="quality-info-text">Yüksek renk doğruluğu ve net detaylar (~%45-60 boyut tasarrufu).</span>
+                            </div>
+                        </div>
+
+                        <!-- Çıktı Dosya Adı -->
+                        <div id="filename-wrapper">
+                            <label for="output-filename" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Çıktı Dosya Adı</label>
+                            <div class="relative flex items-center">
+                                <input type="text" id="output-filename" value="birlestirilmis-psd.pdf" placeholder="birlestirilmis-psd.pdf" class="w-full bg-slate-850 border border-slate-700 hover:border-slate-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pl-4 pr-12 py-2.5 text-sm text-white outline-none transition-colors">
+                                <span id="filename-ext-badge" class="absolute right-3 text-xs font-mono text-slate-500">.pdf</span>
+                            </div>
+                        </div>
+
+                        <!-- İlerleme Çubuğu (Progress Bar) Alanı -->
+                        <div id="progress-container" class="hidden bg-slate-950/80 border border-slate-800 rounded-xl p-4 animate-fade-in">
+                            <div class="flex items-center justify-between text-xs mb-2">
+                                <span id="progress-status" class="text-slate-300 font-medium truncate pr-2">Hazırlanıyor...</span>
+                                <span id="progress-percent" class="text-indigo-400 font-bold shrink-0">0%</span>
+                            </div>
+                            <div class="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
+                                <div id="progress-bar" class="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-300" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Dönüştür Butonu -->
+                        <button id="btn-convert" type="button" disabled class="w-full py-3.5 px-5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed shadow-lg shadow-indigo-600/20 disabled:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]">
+                            <i data-lucide="file-output" class="w-4 h-4"></i>
+                            <span id="btn-convert-text">PDF'e Dönüştür ve İndir</span>
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Bilgi Notu -->
+                <div class="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-4 flex items-start gap-3">
+                    <i data-lucide="info" class="w-5 h-5 text-indigo-400 shrink-0 mt-0.5"></i>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        <strong class="text-slate-200">İpucu:</strong> Photoshop'ta dosyalarınızı kaydederken <em>"Maximize Compatibility (Uyumluluğu En Üst Düzeye Çıkar)"</em> seçeneğinin açık olması en hızlı ve en doğru sonucu verir. Kapalı olsa dahi uygulama katmanları birleştirmeyi dener.
+                    </p>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Alt Bilgi (Footer) -->
+    <footer class="border-t border-slate-800/60 py-6 mt-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+            <p>Tüm işlemler tarayıcı belleğinde (Client-Side) gerçekleştirilir. Verileriniz gizli kalır.</p>
+            <p>ag-psd • jsPDF • JSZip • SortableJS</p>
+        </div>
+    </footer>
+
+    <!-- Uygulama Mantığı (JavaScript) -->
+    <script>
+        /**
+         * PSD - PDF Dönüştürücü Uygulaması
+         * Tamamen tarayıcı üzerinde ag-psd, jsPDF, JSZip ve SortableJS kullanarak çalışır.
+         */
+        document.addEventListener('DOMContentLoaded', () => {
+            // Lucide ikonlarını başlat
+            lucide.createIcons();
+
+            // --- Uygulama Durumu (State) ---
+            let psdItems = []; // { id, name, sizeBytes, width, height, layerCount, canvas, previewUrl, warning }
+            let isProcessing = false;
+
+            // --- DOM Elemanları ---
+            const dropZone = document.getElementById('drop-zone');
+            const fileInput = document.getElementById('file-input');
+            const psdListEl = document.getElementById('psd-list');
+            const listHeaderEl = document.getElementById('list-header');
+            const emptyStateEl = document.getElementById('empty-state');
+            const fileCountBadge = document.getElementById('file-count-badge');
+            const btnClearAll = document.getElementById('btn-clear-all');
+            const btnSortName = document.getElementById('btn-sort-name');
+            const btnGenerateDemo = document.getElementById('btn-generate-demo');
+            const btnConvert = document.getElementById('btn-convert');
+            const btnConvertText = document.getElementById('btn-convert-text');
+            
+            // Ayarlar DOM Elemanları
+            const outputModeRadios = document.querySelectorAll('input[name="outputMode"]');
+            const pageSizeSelect = document.getElementById('page-size');
+            const imageQualitySelect = document.getElementById('image-quality');
+            const qualityInfoText = document.getElementById('quality-info-text');
+            const outputFilenameInput = document.getElementById('output-filename');
+            const filenameExtBadge = document.getElementById('filename-ext-badge');
+
+            // Kalite Seçeneği Açıklamaları ve Tahmini Tasarruf Oranları
+            const qualityDescriptions = {
+                'png': 'Sıfır veri kaybı ve tam şeffaflık desteği (Orijinal boyut, en yüksek netlik).',
+                'jpeg-85': 'Yüksek renk doğruluğu ve net detaylar (~%45–60 boyut tasarrufu).',
+                'jpeg-50': 'Akıllı kenar keskinleştirme (Unsharp Mask) aktif; metinler bozulmadan ~%70–80 tasarruf.',
+                'jpeg-25': 'Güçlü kenar koruma ve yüksek kontrast filtresi aktif; ultra düşük boyut (~%85–92 tasarruf).'
+            };
+
+            function updateQualityInfo() {
+                const val = imageQualitySelect.value;
+                qualityInfoText.textContent = qualityDescriptions[val] || '';
+            }
+            imageQualitySelect.addEventListener('change', updateQualityInfo);
+            updateQualityInfo();
+
+            // İlerleme Çubuğu DOM Elemanları
+            const progressContainer = document.getElementById('progress-container');
+            const progressStatus = document.getElementById('progress-status');
+            const progressPercent = document.getElementById('progress-percent');
+            const progressBar = document.getElementById('progress-bar');
+
+            // --- SortableJS Başlatma ---
+            const sortable = new Sortable(psdListEl, {
+                animation: 200,
+                handle: '.drag-handle',
+                ghostClass: 'sortable-ghost',
+                dragClass: 'sortable-drag',
+                onEnd: () => {
+                    // DOM sırasına göre psdItems dizisini yeniden sırala
+                    const newOrderIds = Array.from(psdListEl.children).map(el => el.dataset.id);
+                    psdItems = newOrderIds.map(id => psdItems.find(item => item.id === id)).filter(Boolean);
+                    updatePageBadges();
+                }
+            });
+
+            // --- Yardımcı Fonksiyonlar ---
+
+            /**
+             * Kullanıcıya modern bildirim (toast) gösterir.
+             */
+            function showToast(message, type = 'info') {
+                const container = document.getElementById('toast-container');
+                const toast = document.createElement('div');
+                
+                const styles = {
+                    success: 'bg-slate-900 border-emerald-500/40 text-emerald-300',
+                    error: 'bg-slate-900 border-rose-500/40 text-rose-300',
+                    warning: 'bg-slate-900 border-amber-500/40 text-amber-300',
+                    info: 'bg-slate-900 border-indigo-500/40 text-indigo-300'
+                };
+
+                const icons = {
+                    success: 'check-circle-2',
+                    error: 'alert-circle',
+                    warning: 'alert-triangle',
+                    info: 'info'
+                };
+
+                toast.className = `pointer-events-auto flex items-start gap-3 p-4 rounded-xl border shadow-2xl backdrop-blur-md animate-fade-in ${styles[type] || styles.info}`;
+                toast.innerHTML = `
+                    <i data-lucide="${icons[type] || icons.info}" class="w-5 h-5 shrink-0 mt-0.5"></i>
+                    <div class="text-xs font-medium leading-relaxed flex-1 text-slate-200">${message}</div>
+                    <button type="button" class="text-slate-500 hover:text-slate-300 cursor-pointer" onclick="this.parentElement.remove()">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                `;
+
+                container.appendChild(toast);
+                lucide.createIcons({ root: toast });
+
+                setTimeout(() => {
+                    if (toast.parentElement) {
+                        toast.style.opacity = '0';
+                        toast.style.transform = 'translateY(8px)';
+                        toast.style.transition = 'all 0.2s ease';
+                        setTimeout(() => toast.remove(), 200);
+                    }
+                }, 5000);
+            }
+
+            /**
+             * Bayt cinsinden boyutu okunabilir formata çevirir (KB, MB).
+             */
+            function formatBytes(bytes) {
+                if (!bytes || bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+
+            /**
+             * PSD içerisindeki toplam katman sayısını özyinelemeli (recursive) hesaplar.
+             */
+            function countLayers(children) {
+                if (!children || !Array.isArray(children)) return 0;
+                let count = 0;
+                for (const child of children) {
+                    count++;
+                    if (child.children) {
+                        count += countLayers(child.children);
+                    }
+                }
+                return count;
+            }
+
+            /**
+             * Eğer PSD dosyası "Maximize Compatibility" kapalı kaydedilmişse (psd.canvas yoksa),
+             * görünür katmanları sırayla birleştirerek bir canvas oluşturmaya çalışır.
+             */
+            function compositeLayersFallback(psd) {
+                const canvas = document.createElement('canvas');
+                canvas.width = psd.width;
+                canvas.height = psd.height;
+                const ctx = canvas.getContext('2d');
+
+                function drawLayerList(layers) {
+                    if (!layers) return;
+                    // ag-psd'de katmanlar alttan üste doğru sıralıdır
+                    for (const layer of layers) {
+                        if (layer.hidden) continue;
+                        if (layer.children) {
+                            drawLayerList(layer.children);
+                        } else if (layer.canvas) {
+                            ctx.save();
+                            if (typeof layer.opacity === 'number') {
+                                ctx.globalAlpha = layer.opacity;
+                            }
+                            ctx.drawImage(layer.canvas, layer.left || 0, layer.top || 0);
+                            ctx.restore();
+                        }
+                    }
+                }
+
+                drawLayerList(psd.children);
+                return canvas;
+            }
+
+            /**
+             * ArrayBuffer halindeki PSD verisini okur ve uygulama listesine ekler.
+             */
+            async function parseAndAddPsdBuffer(arrayBuffer, fileName, fileSize) {
+                try {
+                    if (typeof agPsd === 'undefined') {
+                        throw new Error('PSD kütüphanesi (ag-psd) yüklenemedi. İnternet bağlantınızı kontrol edin.');
+                    }
+
+                    // ag-psd ile dosyayı oku
+                    const psd = agPsd.readPsd(arrayBuffer);
+
+                    if (!psd || !psd.width || !psd.height) {
+                        throw new Error('Geçersiz veya bozuk PSD dosya yapısı.');
+                    }
+
+                    let finalCanvas = psd.canvas;
+                    let warningMsg = null;
+
+                    // Composite görüntü yoksa katmanlardan oluşturmayı dene
+                    if (!finalCanvas) {
+                        if (psd.children && psd.children.length > 0) {
+                            finalCanvas = compositeLayersFallback(psd);
+                            warningMsg = 'Uyumluluk önizlemesi kapalı kaydedilmiş; katmanlardan birleştirildi.';
+                        } else {
+                            throw new Error('PSD içerisinde görüntü verisi veya katman bulunamadı.');
+                        }
+                    }
+
+                    // Küçük önizleme (thumbnail) oluştur (Performans için max 240px)
+                    const thumbCanvas = document.createElement('canvas');
+                    const maxThumbDim = 240;
+                    const scale = Math.min(1, maxThumbDim / Math.max(psd.width, psd.height));
+                    thumbCanvas.width = Math.max(1, Math.round(psd.width * scale));
+                    thumbCanvas.height = Math.max(1, Math.round(psd.height * scale));
+                    const thumbCtx = thumbCanvas.getContext('2d');
+                    thumbCtx.drawImage(finalCanvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
+
+                    const item = {
+                        id: 'psd_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9),
+                        name: fileName,
+                        sizeBytes: fileSize || arrayBuffer.byteLength,
+                        width: psd.width,
+                        height: psd.height,
+                        layerCount: countLayers(psd.children),
+                        canvas: finalCanvas,
+                        previewUrl: thumbCanvas.toDataURL('image/png'),
+                        warning: warningMsg
+                    };
+
+                    psdItems.push(item);
+                    renderList();
+                    return true;
+                } catch (err) {
+                    console.error('PSD Okuma Hatası:', fileName, err);
+                    showToast(`<strong>${fileName}</strong> okunamadı: ${err.message}`, 'error');
+                    return false;
+                }
+            }
+
+            /**
+             * Kullanıcının seçtiği veya sürüklediği dosyaları işler.
+             */
+            async function handleFiles(files) {
+                const fileArray = Array.from(files);
+                if (fileArray.length === 0) return;
+
+                let addedCount = 0;
+                for (const file of fileArray) {
+                    if (!file.name.toLowerCase().endsWith('.psd')) {
+                        showToast(`<strong>${file.name}</strong> desteklenmiyor. Lütfen yalnızca .psd dosyaları yükleyin.`, 'warning');
+                        continue;
+                    }
+
+                    const buffer = await file.arrayBuffer();
+                    const success = await parseAndAddPsdBuffer(buffer, file.name, file.size);
+                    if (success) addedCount++;
+                }
+
+                if (addedCount > 0) {
+                    showToast(`${addedCount} adet PSD dosyası başarıyla eklendi.`, 'success');
+                }
+            }
+
+            /**
+             * Yüklenen PSD listesini DOM'a çizer.
+             */
+            function renderList() {
+                psdListEl.innerHTML = '';
+
+                if (psdItems.length === 0) {
+                    listHeaderEl.classList.add('hidden');
+                    listHeaderEl.classList.remove('flex');
+                    emptyStateEl.classList.remove('hidden');
+                    btnConvert.disabled = true;
+                    return;
+                }
+
+                listHeaderEl.classList.remove('hidden');
+                listHeaderEl.classList.add('flex');
+                emptyStateEl.classList.add('hidden');
+                btnConvert.disabled = isProcessing;
+                fileCountBadge.textContent = psdItems.length;
+
+                psdItems.forEach((item, index) => {
+                    const card = document.createElement('div');
+                    card.dataset.id = item.id;
+                    card.className = 'group bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-3.5 sm:p-4 flex items-center gap-3.5 sm:gap-4 transition-all animate-fade-in shadow-sm';
+
+                    const warningBadge = item.warning 
+                        ? `<span class="inline-flex items-center gap-1 text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md mt-1" title="${item.warning}">
+                               <i data-lucide="alert-triangle" class="w-3 h-3"></i> Katman Birleştirme
+                           </span>` 
+                        : '';
+
+                    card.innerHTML = `
+                        <!-- Sürükleme Tutamacı -->
+                        <div class="drag-handle cursor-grab active:cursor-grabbing p-1.5 text-slate-500 hover:text-slate-300 rounded-lg hover:bg-slate-800 transition-colors shrink-0" title="Sırayı değiştirmek için sürükleyin">
+                            <i data-lucide="grip-vertical" class="w-5 h-5"></i>
+                        </div>
+
+                        <!-- Önizleme Görseli -->
+                        <div class="relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl checkerboard border border-slate-700/80 overflow-hidden shrink-0 flex items-center justify-center">
+                            <img src="${item.previewUrl}" alt="${item.name}" class="max-w-full max-h-full object-contain">
+                            <span class="page-badge absolute top-1 left-1 bg-indigo-600/95 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md shadow">
+                                ${index + 1}. Sayfa
+                            </span>
+                        </div>
+
+                        <!-- Dosya Bilgileri -->
+                        <div class="flex-1 min-w-0">
+                            <h4 class="text-sm font-semibold text-white truncate" title="${item.name}">${item.name}</h4>
+                            
+                            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-xs text-slate-400">
+                                <span class="inline-flex items-center gap-1" title="Piksel Boyutları">
+                                    <i data-lucide="maximize-2" class="w-3.5 h-3.5 text-slate-500"></i>
+                                    ${item.width} × ${item.height} px
+                                </span>
+                                <span class="text-slate-700">•</span>
+                                <span class="inline-flex items-center gap-1" title="Dosya Boyutu">
+                                    <i data-lucide="hard-drive" class="w-3.5 h-3.5 text-slate-500"></i>
+                                    ${formatBytes(item.sizeBytes)}
+                                </span>
+                                <span class="text-slate-700">•</span>
+                                <span class="inline-flex items-center gap-1" title="Katman Sayısı">
+                                    <i data-lucide="layers" class="w-3.5 h-3.5 text-slate-500"></i>
+                                    ${item.layerCount} Katman
+                                </span>
+                            </div>
+                            ${warningBadge}
+                        </div>
+
+                        <!-- Silme Butonu -->
+                        <button type="button" data-remove-id="${item.id}" class="btn-remove-item p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors shrink-0 cursor-pointer" title="Listeden Kaldır">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    `;
+
+                    psdListEl.appendChild(card);
+                });
+
+                // Silme butonlarına olay dinleyicisi ekle
+                document.querySelectorAll('.btn-remove-item').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const idToRemove = e.currentTarget.dataset.removeId;
+                        psdItems = psdItems.filter(item => item.id !== idToRemove);
+                        renderList();
+                    });
+                });
+
+                lucide.createIcons({ root: psdListEl });
+            }
+
+            /**
+             * Sürükle-bırak sonrası sayfa rozetlerini (1. Sayfa, 2. Sayfa...) günceller.
+             */
+            function updatePageBadges() {
+                const badges = psdListEl.querySelectorAll('.page-badge');
+                badges.forEach((badge, idx) => {
+                    badge.textContent = `${idx + 1}. Sayfa`;
+                });
+            }
+
+            /**
+             * Yüksek sıkıştırma (%50 ve %25) öncesinde metin ve kenar detaylarının
+             * bulanıklaşmasını önlemek için tuvale Unsharp Mask (Keskinleştirme) uygular.
+             */
+            function applyCrispSharpen(ctx, width, height, strength = 0.25) {
+                try {
+                    const imgData = ctx.getImageData(0, 0, width, height);
+                    const data = imgData.data;
+                    const copy = new Uint8ClampedArray(data);
+                    const w4 = width * 4;
+
+                    // 3x3 Laplacian tabanlı hızlı kenar keskinleştirme çekirdeği
+                    for (let y = 1; y < height - 1; y++) {
+                        const rowOffset = y * w4;
+                        for (let x = 1; x < width - 1; x++) {
+                            const idx = rowOffset + x * 4;
+                            for (let c = 0; c < 3; c++) {
+                                const i = idx + c;
+                                const center = copy[i] * 4;
+                                const neighbors = copy[i - 4] + copy[i + 4] + copy[i - w4] + copy[i + w4];
+                                const diff = center - neighbors;
+                                data[i] = Math.min(255, Math.max(0, copy[i] + diff * strength));
+                            }
+                        }
+                    }
+                    ctx.putImageData(imgData, 0, 0);
+                } catch (e) {
+                    // Çok büyük tuvallerde bellek sınırı olursa işlemi güvenle atla
+                    console.warn('Keskinleştirme filtresi atlandı:', e);
+                }
+            }
+
+            /**
+             * İlerleme çubuğunu günceller ve tarayıcının arayüzü çizmesine izin verir.
+             */
+            function updateProgress(percent, statusText) {
+                progressContainer.classList.remove('hidden');
+                progressBar.style.width = `${percent}%`;
+                progressPercent.textContent = `${Math.round(percent)}%`;
+                progressStatus.textContent = statusText;
+                return new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 25)));
+            }
+
+            /**
+             * Tek bir PSD öğesini mevcut ayarlara göre jsPDF sayfasına ekler veya yeni jsPDF örneği döndürür.
+             */
+            function addPsdToPdfInstance(pdf, item, isFirstPage, pageSizeOption, qualityOption) {
+                const imgWidth = item.width;
+                const imgHeight = item.height;
+                const orientation = imgWidth >= imgHeight ? 'landscape' : 'portrait';
+
+                // Görüntü formatı, sıkıştırma kalitesi ve keskinleştirme seviyesi
+                let imgFormat = 'JPEG';
+                let quality = 0.85;
+                let mimeType = 'image/jpeg';
+                let sharpenStrength = 0;
+
+                if (qualityOption === 'png') {
+                    imgFormat = 'PNG';
+                    quality = 1.0;
+                    mimeType = 'image/png';
+                } else if (qualityOption === 'jpeg-85') {
+                    imgFormat = 'JPEG';
+                    quality = 0.85;
+                    mimeType = 'image/jpeg';
+                    sharpenStrength = 0.08; // Hafif detay koruma
+                } else if (qualityOption === 'jpeg-50') {
+                    imgFormat = 'JPEG';
+                    quality = 0.50;
+                    mimeType = 'image/jpeg';
+                    sharpenStrength = 0.24; // Dengeli metin ve kenar netleştirme
+                } else if (qualityOption === 'jpeg-25') {
+                    imgFormat = 'JPEG';
+                    quality = 0.25;
+                    mimeType = 'image/jpeg';
+                    sharpenStrength = 0.42; // Yüksek sıkıştırma bloklanmasını telafi eden güçlü keskinleştirme
+                }
+
+                // JPEG formatında şeffaf alanların siyah görünmemesi ve yüksek kalite örnekleme için tuval hazırla
+                let exportCanvas = item.canvas;
+                if (imgFormat === 'JPEG') {
+                    exportCanvas = document.createElement('canvas');
+                    exportCanvas.width = imgWidth;
+                    exportCanvas.height = imgHeight;
+                    const ctx = exportCanvas.getContext('2d', { alpha: false });
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, imgWidth, imgHeight);
+                    ctx.drawImage(item.canvas, 0, 0);
+
+                    // JPEG sıkıştırması öncesi kenar ve metin netliğini koru
+                    if (sharpenStrength > 0) {
+                        applyCrispSharpen(ctx, imgWidth, imgHeight, sharpenStrength);
+                    }
+                }
+
+                const imgDataUrl = exportCanvas.toDataURL(mimeType, quality);
+
+                // Sayfa boyutunu belirle
+                let pageFormat;
+                if (pageSizeOption === 'original') {
+                    // Piksel -> Punto (pt) dönüşümü (1px = 0.75pt veya doğrudan px birimi)
+                    pageFormat = [imgWidth, imgHeight];
+                } else {
+                    pageFormat = pageSizeOption; // 'a4' veya 'letter'
+                }
+
+                if (isFirstPage) {
+                    pdf = new window.jspdf.jsPDF({
+                        orientation: orientation,
+                        unit: pageSizeOption === 'original' ? 'px' : 'mm',
+                        format: pageFormat,
+                        compress: true
+                    });
+                } else {
+                    pdf.addPage(pageFormat, orientation);
+                }
+
+                const pdfPageWidth = pdf.internal.pageSize.getWidth();
+                const pdfPageHeight = pdf.internal.pageSize.getHeight();
+
+                if (pageSizeOption === 'original') {
+                    // Orijinal boyutta sayfayı birebir kapla
+                    pdf.addImage(imgDataUrl, imgFormat, 0, 0, pdfPageWidth, pdfPageHeight, undefined, 'FAST');
+                } else {
+                    // A4 veya Letter sayfasına oranını koruyarak (aspect ratio) ortala
+                    const ratio = Math.min(pdfPageWidth / imgWidth, pdfPageHeight / imgHeight);
+                    const renderW = imgWidth * ratio;
+                    const renderH = imgHeight * ratio;
+                    const offsetX = (pdfPageWidth - renderW) / 2;
+                    const offsetY = (pdfPageHeight - renderH) / 2;
+
+                    pdf.addImage(imgDataUrl, imgFormat, offsetX, offsetY, renderW, renderH, undefined, 'FAST');
+                }
+
+                return pdf;
+            }
+
+            /**
+             * Tüm PSD dosyalarını PDF'e dönüştürme ve indirme sürecini yönetir.
+             */
+            async function convertToPdf() {
+                if (psdItems.length === 0 || isProcessing) return;
+
+                isProcessing = true;
+                btnConvert.disabled = true;
+                btnConvertText.textContent = 'Dönüştürülüyor...';
+
+                const outputMode = document.querySelector('input[name="outputMode"]:checked').value;
+                const pageSizeOption = pageSizeSelect.value;
+                const qualityOption = imageQualitySelect.value;
+                let rawFilename = outputFilenameInput.value.trim() || 'birlestirilmis-psd';
+
+                try {
+                    const total = psdItems.length;
+
+                    if (outputMode === 'merge') {
+                        // --- MOD 1: TEK PDF OLARAK BİRLEŞTİR ---
+                        let mergedPdf = null;
+
+                        for (let i = 0; i < total; i++) {
+                            const item = psdItems[i];
+                            const percent = ((i) / total) * 90;
+                            await updateProgress(percent, `Dosya işleniyor: ${item.name} (${i + 1}/${total})...`);
+
+                            mergedPdf = addPsdToPdfInstance(mergedPdf, item, i === 0, pageSizeOption, qualityOption);
+                        }
+
+                        await updateProgress(95, 'PDF dosyası derleniyor ve indiriliyor...');
+                        
+                        const finalName = rawFilename.toLowerCase().endsWith('.pdf') ? rawFilename : `${rawFilename}.pdf`;
+                        mergedPdf.save(finalName);
+
+                        await updateProgress(100, 'Tamamlandı!');
+                        showToast(`<strong>${finalName}</strong> (${total} sayfa) başarıyla indirildi.`, 'success');
+
+                    } else {
+                        // --- MOD 2: HER DOSYAYI AYRI PDF YAP (ZIP PAKETİ) ---
+                        const zip = new JSZip();
+                        const usedNames = new Set();
+
+                        for (let i = 0; i < total; i++) {
+                            const item = psdItems[i];
+                            const percent = ((i) / total) * 85;
+                            await updateProgress(percent, `PDF oluşturuluyor: ${item.name} (${i + 1}/${total})...`);
+
+                            const singlePdf = addPsdToPdfInstance(null, item, true, pageSizeOption, qualityOption);
+                            const pdfBlob = singlePdf.output('blob');
+
+                            // Çakışan dosya adlarını önle
+                            let basePdfName = item.name.replace(/\.psd$/i, '');
+                            let candidateName = `${basePdfName}.pdf`;
+                            let counter = 1;
+                            while (usedNames.has(candidateName.toLowerCase())) {
+                                candidateName = `${basePdfName}_${counter}.pdf`;
+                                counter++;
+                            }
+                            usedNames.add(candidateName.toLowerCase());
+
+                            zip.file(candidateName, pdfBlob);
+                        }
+
+                        await updateProgress(92, 'ZIP arşivi sıkıştırılıyor...');
+                        const zipBlob = await zip.generateAsync({ type: 'blob' });
+
+                        // İndirme bağlantısını tetikle
+                        const zipBaseName = rawFilename.replace(/\.(pdf|zip)$/i, '') || 'psd-pdf-arsivi';
+                        const finalZipName = `${zipBaseName}.zip`;
+                        
+                        const link = document.createElement('a');
+                        link.href = URL.createObjectURL(zipBlob);
+                        link.download = finalZipName;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(link.href);
+
+                        await updateProgress(100, 'ZIP arşivi indirildi!');
+                        showToast(`<strong>${total} adet ayrı PDF</strong> dosyası <strong>${finalZipName}</strong> içinde indirildi.`, 'success');
+                    }
+
+                } catch (error) {
+                    console.error('Dönüştürme Hatası:', error);
+                    showToast(`Dönüştürme sırasında bir hata oluştu: ${error.message}`, 'error');
+                } finally {
+                    isProcessing = false;
+                    btnConvert.disabled = psdItems.length === 0;
+                    btnConvertText.textContent = "PDF'e Dönüştür ve İndir";
+                    setTimeout(() => {
+                        progressContainer.classList.add('hidden');
+                        progressBar.style.width = '0%';
+                    }, 2500);
+                }
+            }
+
+            /**
+             * Kullanıcının test edebilmesi için ag-psd'nin writePsd fonksiyonunu kullanarak
+             * tarayıcıda gerçek çok katmanlı 3 adet örnek .psd dosyası üretir ve listeye ekler.
+             */
+            async function generateDemoPsds() {
+                if (typeof agPsd === 'undefined' || !agPsd.writePsd) {
+                    showToast('ag-psd yazma modülü yüklenemedi.', 'error');
+                    return;
+                }
+
+                btnGenerateDemo.disabled = true;
+                const originalHtml = btnGenerateDemo.innerHTML;
+                btnGenerateDemo.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin text-indigo-400"></i><span>Oluşturuluyor...</span>`;
+                lucide.createIcons({ root: btnGenerateDemo });
+
+                try {
+                    const demos = [
+                        {
+                            name: '01-Kapak-Tasarimi.psd',
+                            width: 1200,
+                            height: 1600,
+                            bg1: '#312e81',
+                            bg2: '#4f46e5',
+                            title: 'KURUMSAL SUNUM',
+                            subtitle: '2026 Strateji ve Tasarım Raporu'
+                        },
+                        {
+                            name: '02-Urun-Katalogu.psd',
+                            width: 1600,
+                            height: 1130,
+                            bg1: '#0f172a',
+                            bg2: '#0284c7',
+                            title: 'YENİ SEZON KOLEKSİYONU',
+                            subtitle: 'Yüksek Çözünürlüklü Baskı Önizlemesi (Yatay)'
+                        },
+                        {
+                            name: '03-Iletisim-Arka-Kapak.psd',
+                            width: 1200,
+                            height: 1600,
+                            bg1: '#064e3b',
+                            bg2: '#059669',
+                            title: 'TEŞEKKÜRLER',
+                            subtitle: 'www.ornekajans.com.tr • İstanbul'
+                        }
+                    ];
+
+                    for (const demo of demos) {
+                        // Ana Composite Canvas
+                        const mainCanvas = document.createElement('canvas');
+                        mainCanvas.width = demo.width;
+                        mainCanvas.height = demo.height;
+                        const ctx = mainCanvas.getContext('2d');
+
+                        // Arka plan gradyanı
+                        const grad = ctx.createLinearGradient(0, 0, demo.width, demo.height);
+                        grad.addColorStop(0, demo.bg1);
+                        grad.addColorStop(1, demo.bg2);
+                        ctx.fillStyle = grad;
+                        ctx.fillRect(0, 0, demo.width, demo.height);
+
+                        // Dekoratif geometrik daire
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+                        ctx.beginPath();
+                        ctx.arc(demo.width * 0.8, demo.height * 0.25, demo.width * 0.35, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        // Çerçeve çizgisi
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+                        ctx.lineWidth = 8;
+                        ctx.strokeRect(60, 60, demo.width - 120, demo.height - 120);
+
+                        // Başlık Metni
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = 'bold 68px Inter, sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(demo.title, demo.width / 2, demo.height / 2 - 20);
+
+                        // Alt Başlık
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+                        ctx.font = '400 34px Inter, sans-serif';
+                        ctx.fillText(demo.subtitle, demo.width / 2, demo.height / 2 + 45);
+
+                        // Katmanlar için ayrı küçük canvas'lar oluştur (Gerçek PSD katman yapısı için)
+                        const bgLayerCanvas = document.createElement('canvas');
+                        bgLayerCanvas.width = demo.width;
+                        bgLayerCanvas.height = demo.height;
+                        bgLayerCanvas.getContext('2d').fillStyle = grad;
+                        bgLayerCanvas.getContext('2d').fillRect(0, 0, demo.width, demo.height);
+
+                        // ag-psd nesnesi tanımla
+                        const psdData = {
+                            width: demo.width,
+                            height: demo.height,
+                            canvas: mainCanvas,
+                            children: [
+                                {
+                                    name: 'Arka Plan Gradyan',
+                                    canvas: bgLayerCanvas
+                                },
+                                {
+                                    name: 'Tipografi ve Çerçeve',
+                                    canvas: mainCanvas
+                                }
+                            ]
+                        };
+
+                        // Gerçek binary .psd ArrayBuffer üret
+                        const psdBuffer = agPsd.writePsd(psdData);
+                        await parseAndAddPsdBuffer(psdBuffer, demo.name, psdBuffer.byteLength);
+                    }
+
+                    showToast('3 adet örnek çok katmanlı PSD dosyası oluşturuldu ve listeye eklendi!', 'success');
+                } catch (err) {
+                    console.error('Demo PSD oluşturma hatası:', err);
+                    showToast('Demo PSD oluşturulurken hata oluştu: ' + err.message, 'error');
+                } finally {
+                    btnGenerateDemo.disabled = false;
+                    btnGenerateDemo.innerHTML = originalHtml;
+                    lucide.createIcons({ root: btnGenerateDemo });
+                }
+            }
+
+            // --- Olay Dinleyicileri (Event Listeners) ---
+
+            // Tıklama ile dosya seçimi
+            dropZone.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', (e) => {
+                handleFiles(e.target.files);
+                fileInput.value = ''; // Aynı dosyayı tekrar seçebilmek için sıfırla
+            });
+
+            // Sürükle & Bırak Olayları
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.classList.add('border-indigo-500', 'bg-indigo-500/10');
+                });
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.classList.remove('border-indigo-500', 'bg-indigo-500/10');
+                });
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                const droppedFiles = e.dataTransfer?.files;
+                if (droppedFiles) {
+                    handleFiles(droppedFiles);
+                }
+            });
+
+            // Tümünü Temizle
+            btnClearAll.addEventListener('click', () => {
+                psdItems = [];
+                renderList();
+                showToast('Tüm dosyalar listeden temizlendi.', 'info');
+            });
+
+            // İsme Göre Sırala (A-Z)
+            btnSortName.addEventListener('click', () => {
+                psdItems.sort((a, b) => a.name.localeCompare(b.name, 'tr', { numeric: true }));
+                renderList();
+                showToast('Dosyalar alfabetik olarak sıralandı.', 'info');
+            });
+
+            // Çıktı Modu değiştiğinde dosya adı uzantısını güncelle
+            outputModeRadios.forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    const isSeparate = e.target.value === 'separate';
+                    filenameExtBadge.textContent = isSeparate ? '.zip' : '.pdf';
+                    if (isSeparate && outputFilenameInput.value === 'birlestirilmis-psd.pdf') {
+                        outputFilenameInput.value = 'psd-pdf-arsivi.zip';
+                    } else if (!isSeparate && outputFilenameInput.value === 'psd-pdf-arsivi.zip') {
+                        outputFilenameInput.value = 'birlestirilmis-psd.pdf';
+                    }
+                });
+            });
+
+            // Demo PSD Oluştur Butonu
+            btnGenerateDemo.addEventListener('click', generateDemoPsds);
+
+            // Dönüştür Butonu
+            btnConvert.addEventListener('click', convertToPdf);
+        });
+    </script>
+</body>
+</html>
